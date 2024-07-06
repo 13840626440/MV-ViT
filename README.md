@@ -1,4 +1,3 @@
-# CrossViT
 
 This repository is the official implementation of CrossViT: Cross-Attention Multi-Scale Vision Transformer for Image Classification. [ArXiv](https://arxiv.org/abs/2103.14899)
 
