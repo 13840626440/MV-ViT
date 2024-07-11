@@ -44,6 +44,7 @@ class PatchEmbed(nn.Module):
         self.img_size = img_size
         self.patch_size = patch_size
         self.num_patches = num_patches
+        #对应论文的patchembedding的部分，multi反倒是不主流的，所以最好直接进else
         if multi_conv:
             if patch_size[0] == 12:
                 self.proj = nn.Sequential(
@@ -134,11 +135,13 @@ class MultiScaleBlock(nn.Module):
     def __init__(self, dim, patches, depth, num_heads, mlp_ratio, qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm):
         super().__init__()
-
+        #这里的depth就不是外面的二维数组了，数组打开一层后的depth
         num_branches = len(dim)
         self.num_branches = num_branches
         # different branch could have different embedding size, the first one is the base
         self.blocks = nn.ModuleList()
+        # print(depth)
+        #挂了两个block 第三个是0
         for d in range(num_branches):
             tmp = []
             for i in range(depth[d]):
@@ -241,9 +244,11 @@ class VisionTransformer(nn.Module):
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, total_depth)]  # stochastic depth decay rule
         dpr_ptr = 0
         self.blocks = nn.ModuleList()
+        # TODO: dpr这里没懂，再研究下
         for idx, block_cfg in enumerate(depth):
             curr_depth = max(block_cfg[:-1]) + block_cfg[-1]
             dpr_ = dpr[dpr_ptr:dpr_ptr + curr_depth]
+            #这里调用了MultiScaleBlock
             blk = MultiScaleBlock(embed_dim, num_patches, block_cfg, num_heads=num_heads, mlp_ratio=mlp_ratio,
                                   qkv_bias=qkv_bias, qk_scale=qk_scale, drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr_,
                                   norm_layer=norm_layer)
@@ -287,10 +292,14 @@ class VisionTransformer(nn.Module):
         B, C, H, W = x.shape
         xs = []
         for i in range(self.num_branches):
+            #根据高度调整 是否使用插值
             x_ = torch.nn.functional.interpolate(x, size=(self.img_size[i], self.img_size[i]), mode='bicubic') if H != self.img_size[i] else x
+            #patch_embed里面就包含了卷积操作 改变了输入的维度
             tmp = self.patch_embed[i](x_)
             cls_tokens = self.cls_token[i].expand(B, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
             tmp = torch.cat((cls_tokens, tmp), dim=1)
+            # print(self.pos_embed[i]);
+            # print(self.pos_embed[i].shape);
             tmp = tmp + self.pos_embed[i]
             tmp = self.pos_drop(tmp)
             xs.append(tmp)
@@ -313,12 +322,12 @@ class VisionTransformer(nn.Module):
 
 
 @register_model
-def crossvit_tiny_224_three_branches(pretrained=False, **kwargs):
+def mv3(pretrained=False, **kwargs):
     model = VisionTransformer(
-        img_size=[240, 224, 192],   # 输入图像的尺寸，现在有三个不同的尺寸
-        patch_size=[12, 16, 8],     # 每个补丁的尺寸，现在有三个不同的尺寸
-        embed_dim=[96, 192, 64],    # 每个分支的嵌入维度
-        depth=[[1, 4, 0], [1, 4, 0], [1, 4, 0]],  # 每个分支的深度配置
+        img_size=[224,224,224],   # 输入图像的尺寸，现在有三个不同的尺寸
+        patch_size=[16,16,16],     # 每个补丁的尺寸，现在有三个不同的尺寸
+        embed_dim=[96, 96, 96],    # 每个分支的嵌入维度
+        depth=[[1, 4, 4, 0], [1, 4, 4, 0], [1, 4, 4, 0]],  # 每个分支的深度配置
         num_heads=[3, 3, 2],        # 每个分支的注意力头数量
         mlp_ratio=[4, 4, 4],        # 每个分支的 MLP 比例
         qkv_bias=True,              # 是否使用 QKV 偏置
